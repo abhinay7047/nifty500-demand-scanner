@@ -402,6 +402,41 @@ def fetch_batch(tickers, period, interval):
     return results
 
 
+def aggregate_monthly_ohlcv(df, months=3):
+    """Aggregate monthly OHLCV into calendar-aligned quarterly or half-yearly candles."""
+    if df is None or df.empty:
+        return df
+
+    df = df.copy()
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df.index = pd.to_datetime(df.index)
+
+    aggregation = {}
+    for col, method in {
+        "Open": "first", "High": "max", "Low": "min",
+        "Close": "last", "Adj Close": "last", "Volume": "sum",
+    }.items():
+        if col in df.columns:
+            aggregation[col] = method
+    if not all(col in aggregation for col in ("Open", "High", "Low", "Close")):
+        return pd.DataFrame()
+
+    # Calendar-aligned 3-month or 6-month bins.
+    aggregated = df.resample(f"{months}MS").agg(aggregation)
+    aggregated = aggregated.dropna(subset=["Open", "High", "Low", "Close"])
+    if aggregated.empty:
+        return aggregated
+
+    # Exclude the still-forming current quarter/half-year candle.
+    now = pd.Timestamp.now()
+    current_period_month = ((now.month - 1) // months) * months + 1
+    current_period_start = pd.Timestamp(year=now.year, month=current_period_month, day=1)
+    if aggregated.index.tz is not None:
+        current_period_start = current_period_start.tz_localize(aggregated.index.tz)
+    return aggregated[aggregated.index < current_period_start]
+
+
 def add_mtf_confluence(df_results):
     """
     Marks MTF Confluence when a zone overlaps a zone for the same ticker
@@ -458,18 +493,24 @@ def run_nifty500_demand_scanner(timeframe_choice="both", batch_size=40,
         preview = ", ".join(unique_top)
         print(f"  Top sectors ({sector_lookback}): {preview}")
 
+    # Quarterly and half-yearly candles are aggregated from monthly OHLCV data
+    # for compatibility with Yahoo Finance's supported intervals.
     timeframe_specs = []
     if timeframe_choice in ["daily", "both", "all"]:
-        timeframe_specs.append(("1d", "Daily", "1y"))
+        timeframe_specs.append(("1d", "Daily", "1y", None))
     if timeframe_choice in ["weekly", "both", "all"]:
-        timeframe_specs.append(("1wk", "Weekly", "2y"))
+        timeframe_specs.append(("1wk", "Weekly", "2y", None))
     if timeframe_choice in ["monthly", "all"]:
-        timeframe_specs.append(("1mo", "Monthly", "10y"))
+        timeframe_specs.append(("1mo", "Monthly", "10y", None))
+    if timeframe_choice in ["quarterly", "all"]:
+        timeframe_specs.append(("1mo", "Quarterly", "10y", 3))
+    if timeframe_choice in ["half-yearly", "all"]:
+        timeframe_specs.append(("1mo", "Half-Yearly", "10y", 6))
 
     start_time = time.time()
     results = []
 
-    for interval, label, period in timeframe_specs:
+    for interval, label, period, aggregate_months in timeframe_specs:
         num_batches = (len(tickers) + batch_size - 1) // batch_size
         for b in range(num_batches):
             batch = tickers[b * batch_size:(b + 1) * batch_size]
@@ -477,6 +518,8 @@ def run_nifty500_demand_scanner(timeframe_choice="both", batch_size=40,
             batch_data = fetch_batch(batch, period=period, interval=interval)
 
             for ticker, df in batch_data.items():
+                if aggregate_months:
+                    df = aggregate_monthly_ohlcv(df, months=aggregate_months)
                 zones = detect_demand_zones(
                     df, ticker, timeframe=label,
                     proximity_pct=proximity_pct, max_zone_age=max_zone_age,

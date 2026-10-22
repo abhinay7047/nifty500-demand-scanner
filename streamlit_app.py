@@ -25,7 +25,7 @@ st.markdown("""
 
 st.markdown('<div class="main-title">📈 Nifty 500 Demand Zone Scanner</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">Scan fresh Rally-Base-Rally (RBR) and Drop-Base-Rally (DBR) demand zones across daily, weekly, and monthly charts.</div>',
+    '<div class="sub-title">Scan fresh Rally-Base-Rally (RBR) and Drop-Base-Rally (DBR) demand zones across daily, weekly, monthly, quarterly, and half-yearly charts.</div>',
     unsafe_allow_html=True,
 )
 
@@ -33,9 +33,9 @@ with st.sidebar:
     st.header("Scanner settings")
     timeframe_label = st.selectbox(
         "Timeframe",
-        options=["All timeframes", "Daily + Weekly", "Daily", "Weekly", "Monthly"],
+        options=["All timeframes", "Daily + Weekly", "Daily", "Weekly", "Monthly", "Quarterly", "Half-Yearly"],
         index=0,
-        help="All timeframes checks Daily, Weekly, and Monthly candles. Confluence flags overlapping zones on different timeframes.",
+        help="All timeframes checks Daily, Weekly, Monthly, Quarterly, and Half-Yearly candles. Quarterly and Half-Yearly candles are aggregated from monthly OHLCV data. Confluence flags overlapping zones on different timeframes.",
     )
     timeframe_map = {
         "All timeframes": "all",
@@ -43,6 +43,8 @@ with st.sidebar:
         "Daily": "daily",
         "Weekly": "weekly",
         "Monthly": "monthly",
+        "Quarterly": "quarterly",
+        "Half-Yearly": "half-yearly",
     }
     proximity_pct = st.slider(
         "Price proximity to zone (%)", min_value=0.5, max_value=10.0,
